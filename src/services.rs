@@ -14,6 +14,7 @@ use sqlx::PgPool;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::{error, info, warn};
 
 const BOT_FATHER_ID: i64 = 93372553;
 
@@ -38,7 +39,7 @@ pub async fn process_order_to_session(pg_pool: &PgPool, order: &Order, telegram_
         4 => Ipv4Addr::new(149, 154, 167, 91),
         5 => Ipv4Addr::new(91, 108, 56, 165),
         _ => {
-            eprintln!("Неизвестный dc_id: {dc_id}");
+            error!("Неизвестный dc_id: {dc_id}");
             bail!("Неизвестный dc_id: {dc_id}")
         }
     };
@@ -50,7 +51,7 @@ pub async fn process_order_to_session(pg_pool: &PgPool, order: &Order, telegram_
     let auth_key_bytes = match hex::decode(auth_key) {
         Ok(bytes) => {
             if bytes.len() != 256 {
-                eprintln!("Ошибка: ключ для {} не 256 байт", order.telegram_phone);
+                error!("Ошибка: ключ для {} не 256 байт", order.telegram_phone);
                 bail!("Ошибка: ключ для {} не 256 байт", order.telegram_phone)
             }
             bytes
@@ -111,7 +112,11 @@ pub async fn process_order_to_session(pg_pool: &PgPool, order: &Order, telegram_
             Err(BuilderError::Connect(InvocationError::Rpc(rpc_err))) => {
                 if rpc_err.code == 401 || rpc_err.name == "FROZEN_METHOD_INVALID" {
                     let mut tx = pg_pool.begin().await.context("Не удалось начать транзакцию")?;
-
+                    
+                    error!(
+                        "Найден деактевированный аккаунт {} с ошибкой: {} {}", 
+                        order.telegram_phone, rpc_err.code, rpc_err.name
+                    );
                     let acc_id = save_deactivated_account(
                         &mut *tx,
                         order,
@@ -129,15 +134,15 @@ pub async fn process_order_to_session(pg_pool: &PgPool, order: &Order, telegram_
 
                     tx.commit().await.context("Не удалось закоммитить транзакцию невалидного аккаунта")?;
 
-                    println!("Deactivated account {} saved successfully", order.telegram_phone);
+                    info!("Deactivated account {} saved successfully", order.telegram_phone);
                     bail!("Аккаунт деактивирован Телеграмом: код {}", rpc_err.code);
                 }
 
-                eprintln!("Временная RPC ошибка (попытка {}/{}): {}", attempts, MAX_RETRIES, rpc_err);
+                warn!("Временная RPC ошибка (попытка {}/{}): {}", attempts, MAX_RETRIES, rpc_err);
             }
 
             Err(e) => {
-                eprintln!("Сетевой сбой транспорта (попытка {}/{}): {e:#?}", attempts, MAX_RETRIES);
+                warn!("Сетевой сбой транспорта (попытка {}/{}): {e:#?}", attempts, MAX_RETRIES);
             }
         }
 
@@ -208,13 +213,13 @@ async fn process_bot_father(client: &Client, peer: InputPeer) -> anyhow::Result<
     });
 
     if let Err(err) = client.update_notify_settings(peer.clone(), set_settings).await {
-        println!("Не удалось обновить настройки оповещения у bot father: {err:?}")
+        warn!("Не удалось обновить настройки оповещения у bot father: {err:?}")
     };
 
     client.block(peer.clone(), false).await?;
 
     if let Err(err) = client.send_message(peer.clone(), "/cancel").await {
-        println!("Не удалось отправить первое сообщение /cancel боту: {err}")
+        warn!("Не удалось отправить первое сообщение /cancel боту: {err}")
     };
 
     tokio::time::sleep(Duration::from_millis(700)).await;
@@ -228,27 +233,27 @@ async fn process_bot_father(client: &Client, peer: InputPeer) -> anyhow::Result<
         ],
     };
     if let Err(err) = client.invoke(&edit_folder).await {
-        println!("Не удалось поместить чат в архив: {err:?}")
+        warn!("Не удалось поместить чат в архив: {err:?}")
     };
 
     let name_bots = get_name_bots(&client, peer.clone()).await?;
-    println!("{name_bots:?}");
+    info!("{name_bots:?}");
 
     for name_bot in name_bots {
         if let Err(err) = client.send_message(peer.clone(), "/deletebot").await {
-            eprintln!("Не удалось отправить /deletebot: {err}");
+            warn!("Не удалось отправить /deletebot: {err}");
             continue;
         }
 
         tokio::time::sleep(Duration::from_millis(750)).await;
 
         if let Err(err) = client.send_message(peer.clone(), name_bot.clone()).await {
-            eprintln!("Не удалось отправить имя бота {name_bot}: {err}");
+            warn!("Не удалось отправить имя бота {name_bot}: {err}");
             continue;
         };
 
         let Ok(message) = get_last_message(&client, peer.clone()).await else {
-            eprintln!("Не удалось получить ответ от BotFather для {}", name_bot);
+            warn!("Не удалось получить ответ от BotFather для {}", name_bot);
             continue;
         };
 
@@ -263,7 +268,7 @@ async fn process_bot_father(client: &Client, peer: InputPeer) -> anyhow::Result<
     }
 
     if let Err(err) = client.block(peer.clone(), true).await {
-        println!("Не удалось заблокировать bot father: {err:?}")
+        warn!("Не удалось заблокировать bot father: {err:?}")
     };
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -275,7 +280,7 @@ async fn process_bot_father(client: &Client, peer: InputPeer) -> anyhow::Result<
         min_date: None,
         max_date: None,
     }).await {
-        println!("Не удалось удалить историю чата у bot father: {err:?}")
+        warn!("Не удалось удалить историю чата у bot father: {err:?}")
     }
 
     Ok(())
@@ -311,7 +316,7 @@ async fn get_last_message(client: &Client, peer: InputPeer) -> anyhow::Result<tl
         hash: 0,
     }).await?;
 
-    // println!("{history:#?}");
+    // info!("{history:#?}");
 
     let tl::enums::messages::Messages::Slice(history) = history else { bail!("Can't parse last message") };
     let tl::enums::Message::Message(message) = history

@@ -11,7 +11,7 @@ pub struct Order {
     pub item_state: String,
     pub category_id: u32,
     pub published_date: u64,
-    pub price: u64,
+    pub price: i32,
 
     pub telegram_item_id: i64,
     pub telegram_id: i64,
@@ -23,6 +23,9 @@ pub struct Order {
 
     #[serde(rename = "loginData")]
     pub login_data: LoginData,
+
+    #[serde(rename = "telegramBots", default)]
+    pub telegram_bots: Vec<TelegramBot>,
 
     pub seller: Seller,
 }
@@ -42,6 +45,14 @@ pub struct LoginData {
     pub encoded_old_password: Option<String>,
     #[serde(rename = "extraPasswords")]
     pub extra_passwords: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TelegramBot {
+    pub id: String,
+    pub name: String,
+    pub username: Option<String>,
+    pub bot_active_user: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]

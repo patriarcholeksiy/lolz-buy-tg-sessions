@@ -11,11 +11,10 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, EnvFilter};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use crate::services::process_order_to_session;
 
 mod models;
 mod db;
-mod services;
+mod claimer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,9 +30,15 @@ async fn main() -> anyhow::Result<()> {
 
     let acc_ids = get_all_account_ids(&pg_pool).await?;
 
-    let telegram_app = get_telegram_app_by_id(&pg_pool, 1)
+    let mut tg_apps = vec![];
+
+    tg_apps.push(get_telegram_app_by_id(&pg_pool, 1)
         .await
-        .context("Не удалось найти конфигурацию TelegramApp в таблице telegram_apps")?;
+        .context("Не удалось найти конфигурацию TelegramApp в таблице telegram_apps")?);
+
+    tg_apps.push(get_telegram_app_by_id(&pg_pool, 2)
+        .await
+        .context("Не удалось найти конфигурацию TelegramApp в таблице telegram_apps")?);
 
     let client = init_client()?;
     let url = "https://prod-api.lzt.market/user/orders?category_id=24&order_by=pdate_to_down";
@@ -68,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    let mut tg_count: usize = 0;
     loop {
         timer.tick().await;
         info!("Сканирование на новые аккаунты");
@@ -102,7 +108,8 @@ async fn main() -> anyhow::Result<()> {
                 order.telegram_phone, order.telegram_id, order.seller.username
             );
 
-            match process_order_to_session(&pg_pool, &order, &telegram_app.clone()).await {
+            let tg_index = tg_count % tg_apps.len();
+            match claimer::process_order_to_session(&pg_pool, &order, &tg_apps[tg_index].clone()).await {
                 Ok(_) => {
                     info!("✅ Успешно обработан рабочий аккаунт: {}", order.telegram_id);
                 }
@@ -112,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
                     error!("ℹ️ Завершена обработка аккаунта {} (записан статус или ошибка): {:?}", order.telegram_id, err);
                 }
             }
+            tg_count += 1;
 
             let mut cache = acc_ids.lock().await;
             cache.insert(order.telegram_id);

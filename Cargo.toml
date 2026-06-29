@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.102"
 base64 = "0.22.1"
 dotenvy = "0.15.7"
-ferogram = { version = "0.6.0", features = ["serde"] }
+ferogram = { version = "0.6", features = ["serde"] }
 hex = "0.4.3"
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }

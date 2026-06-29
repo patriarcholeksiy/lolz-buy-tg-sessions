@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 pub enum AccountStatus {
     Active,
     Frozen,
-    Unauthorized
+    Unauthorized,
+    DuplicatedKey,
 }
 
 #[derive(Debug)]

@@ -2,6 +2,7 @@ use crate::db::{get_or_create_seller_id, save_account as save_acc_db, save_purch
 use crate::models::Order;
 use anyhow::Context;
 use sqlx::PgPool;
+use crate::claimer::legalizer::SystemData;
 
 pub async fn save_account(
     pool: &PgPool,
@@ -10,6 +11,7 @@ pub async fn save_account(
     dc_id: i32,
     session_str: &str,
     err_code: Option<i32>,
+    system_data: SystemData,
 ) -> anyhow::Result<i32> {
     let mut tx = pool.begin().await.context("Не удалось начать TX деактивации")?;
 
@@ -27,6 +29,9 @@ pub async fn save_account(
         session: session_str.to_string(),
         status,
         tg_id: order.telegram_id,
+        device_model: system_data.device_model,
+        system_version: system_data.system_version,
+        app_version: system_data.app_version,
     };
 
     let acc_id = save_acc_db(&mut *tx, account).await?;

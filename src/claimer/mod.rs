@@ -3,6 +3,7 @@ use anyhow::bail;
 use ferogram::InvocationError;
 use sqlx::PgPool;
 use tracing::{error, info, warn};
+use crate::claimer::legalizer::SystemData;
 use crate::db::TelegramApp;
 use crate::models::Order;
 
@@ -29,7 +30,7 @@ pub async fn process_order_to_session(pool: &PgPool, order: &Order, app: &Telegr
             Err(InvocationError::Rpc(rpc)) => {
                 if rpc.code == 401 || rpc.code == 406 || rpc.name == "FROZEN_METHOD_INVALID" {
                     error!("Аккаунт {} мёртв при покупке: {}", order.telegram_phone, rpc.name);
-                    repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(rpc.code)).await?;
+                    repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(rpc.code), SystemData::default()).await?;
                     bail!("Аккаунт деактивирован Телеграмом: {}", rpc.code);
                 }
             }
@@ -40,7 +41,7 @@ pub async fn process_order_to_session(pool: &PgPool, order: &Order, app: &Telegr
 
         if attempts >= MAX_RETRIES {
             error!("Таймаут для аккаунта: {}", order.telegram_phone);
-            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(401)).await?;
+            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(401), SystemData::default()).await?;
             bail!("Не удалось подключить клиент после {} попыток из-за сетевых проблем", MAX_RETRIES);
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -56,31 +57,31 @@ pub async fn process_order_to_session(pool: &PgPool, order: &Order, app: &Telegr
         Err(err) => warn!("Err generate input peer for bot father: {err:?}")
     };
 
-    let leg_client = match legalizer::spawn_legalized_client(&client, app, &order.telegram_phone).await {
+    let (leg_client, system_data) = match legalizer::spawn_legalized_client(&client, app, &order.telegram_phone).await {
         Ok(ct) => ct,
         Err(err) => {
             error!("Ошибка во время легализации аккаунта {}: {err:?}", order.telegram_phone);
-            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(401)).await?;
+            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(401), SystemData::default()).await?;
             bail!("Аккаунт деактивирован Телеграмом: {err:?}");
         }
     };
 
     match leg_client.export_session_string().await {
         Ok(session_str) => {
-            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, None).await?;
+            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, None, system_data).await?;
             info!("Активный аккаунт {} сохранен!", order.telegram_phone);
         }
         Err(InvocationError::Rpc(rpc)) => {
             if rpc.code == 401 || rpc.code == 406 || rpc.name == "FROZEN_METHOD_INVALID" {
                 error!("Аккаунт {} деактивирован при экспорте сессии: {}", order.telegram_phone, rpc.name);
-                repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(rpc.code)).await?;
+                repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(rpc.code), system_data).await?;
                 leg_client.disconnect();
                 bail!("Аккаунт деактивирован Телеграмом: {}", rpc.code);
             }
         }
         Err(err) => {
             error!("Аккаунт {} деактивирован при экспорте сессии: {:?}", order.telegram_phone, err);
-            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(401)).await?;
+            repo::save_account(pool, order, app.id, dc_id as i32, &session_str, Some(401), system_data).await?;
             leg_client.disconnect();
             bail!("Неизвестная ошибка: {err:?}");
         }

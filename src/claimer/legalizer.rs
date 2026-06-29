@@ -1,15 +1,17 @@
+use std::cmp::Reverse;
 use std::sync::Arc;
 use std::time::Duration;
 use anyhow::{bail, Context};
 use ferogram::{tl, Client, NoRetries, OverflowStrategy};
 use ferogram::tl::enums::InputPeer;
 use ferogram::tl::functions::messages::DeleteHistory;
+use ferogram::tl::types::Authorization;
 use tracing::{info, warn};
 use crate::claimer::tl_utils::{get_last_message, mute_chat, resolve_service_chat_peer};
 use crate::db::TelegramApp;
 
 pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &TelegramApp, phone: &String)
-                                           -> anyhow::Result<Client> {
+                                           -> anyhow::Result<(Client, SystemData)> {
     let peer = resolve_service_chat_peer(&bought_client).await?;
 
     match mute_chat(&bought_client, peer.clone()).await {
@@ -17,10 +19,21 @@ pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &Teleg
         Err(err) => warn!("Error when mute telegram chat: {err:#?}")
     }
 
-    let old_hashes: Vec<i64> = bought_client
-        .get_authorizations()
-        .await
-        .unwrap_or_default()
+    let old_authorizations = bought_client.get_authorizations().await.unwrap_or_default();
+
+    let suitable_auth = old_authorizations
+        .iter()
+        .filter(|auth| !auth.current)
+        .min_by_key(|auth| {
+            (
+                api_weight(auth.api_id),
+                Reverse(auth.date_active),
+            )
+        });
+
+    let system_data = suitable_auth.map(SystemData::from).unwrap_or_default();
+
+    let old_hashes: Vec<i64> = old_authorizations
         .into_iter()
         .map(|a| a.hash)
         .collect();
@@ -34,9 +47,9 @@ pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &Teleg
         .update_overflow_strategy(OverflowStrategy::DropOldest)
         .retry_policy(Arc::new(NoRetries))
         .system_lang_code("en")
-        .device_model("Android")
-        .app_version("3.4.5")
-        .system_version("16")
+        .device_model(system_data.device_model.as_deref().unwrap_or("Android"))
+        .system_version(system_data.system_version.as_deref().unwrap_or("16"))
+        .app_version(system_data.app_version.as_deref().unwrap_or("3.4.5"))
         .build().context("Ошибка конфига legalize клиента")?;
 
     let (fresh_client, _) = Client::connect(config).await?;
@@ -115,7 +128,7 @@ pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &Teleg
 
     bought_client.disconnect();
 
-    Ok(fresh_client)
+    Ok((fresh_client, system_data))
 }
 
 async fn poll_login_code(client: &Client, peer: InputPeer, last_code: Option<String>)
@@ -149,3 +162,42 @@ fn extract_telegram_code(text: &str) -> Option<String> {
     }
     None
 }
+
+#[derive(Default)]
+pub struct SystemData {
+    pub device_model: Option<String>,
+    pub system_version: Option<String>,
+    pub app_version: Option<String>,
+}
+
+impl From<&Authorization> for SystemData {
+    fn from(auth: &Authorization) -> Self {
+        let clean = |s: &str| -> Option<String> {
+            let trimmed = s.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        };
+
+        Self {
+            device_model: clean(&auth.device_model),
+            system_version: clean(&auth.system_version),
+            app_version: clean(&auth.app_version),
+        }
+    }
+}
+fn api_weight(api_id: i32) -> u8 {
+    match api_id {
+        6 => 0, // TG for Android
+        4 => 1, // Public Android Beta
+        21724 => 2, // Telegram X (Android)
+        16623 => 3, // Plus Messenger
+        8 => 4, // Public iOS Beta
+        10840 => 5, //Telegram Swift
+        2040 => 6, // Public Win Beta
+        17349 => 7, // Telegram Desktop (example)
+        2834 => 8, // Public MacOs Beta
+        5 => 9, // Public Static Final
+        9 => 10, // Public unknown Beta
+        _ => 255
+    }
+}
+

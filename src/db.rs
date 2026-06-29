@@ -20,6 +20,9 @@ pub struct Account {
     pub session: String,
     pub status: AccountStatus,
     pub tg_id: i64,
+    pub device_model: Option<String>,
+    pub system_version: Option<String>,
+    pub app_version: Option<String>,
 }
 
 pub async fn get_all_account_ids(pg_pool: &PgPool) -> anyhow::Result<Arc<Mutex<HashSet<i64>>>> {
@@ -34,11 +37,11 @@ pub async fn get_all_account_ids(pg_pool: &PgPool) -> anyhow::Result<Arc<Mutex<H
     Ok(Arc::new(Mutex::new(ids)))
 }
 
-pub async fn save_account(executor: &mut sqlx::PgConnection, account: Account) -> Result<i32, sqlx::Error>{
+pub async fn save_account(executor: &mut PgConnection, account: Account) -> Result<i32, sqlx::Error>{
     let id = sqlx::query_scalar!(
         r#"
-        INSERT INTO accounts (app_id, dc_id, phone, session, status, tg_id)
-        VALUES ($1, $2, $3, $4, $5::account_status, $6)
+        INSERT INTO accounts (app_id, dc_id, phone, session, status, tg_id, device_model, system_version, app_version)
+        VALUES ($1, $2, $3, $4, $5::account_status, $6, $7, $8, $9)
         RETURNING id
         "#,
         account.app_id,
@@ -46,7 +49,10 @@ pub async fn save_account(executor: &mut sqlx::PgConnection, account: Account) -
         account.phone,
         account.session,
         account.status as _,
-        account.tg_id
+        account.tg_id,
+        account.device_model,
+        account.system_version,
+        account.app_version
     ).fetch_one(executor).await?;
     Ok(id)
 }

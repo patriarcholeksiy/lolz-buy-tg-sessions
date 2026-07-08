@@ -1,10 +1,12 @@
 use serde::Deserialize;
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct OrdersResponse {
     pub items: Vec<Order>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct Order {
     pub item_id: u64,
@@ -30,6 +32,7 @@ pub struct Order {
     pub seller: Seller,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct LoginData {
     pub raw: String,
@@ -47,6 +50,7 @@ pub struct LoginData {
     pub extra_passwords: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct TelegramBot {
     pub id: String,

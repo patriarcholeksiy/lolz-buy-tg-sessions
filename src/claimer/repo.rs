@@ -34,9 +34,9 @@ pub async fn save_account(
         app_version: system_data.app_version,
     };
 
-    let acc_id = save_acc_db(&mut *tx, account).await?;
-    let seller_id = get_or_create_seller_id(&mut *tx, order.seller.user_id, &order.seller.username).await?;
-    save_purchase(&mut *tx, acc_id, seller_id, order.price).await?;
+    let acc_id = save_acc_db(&mut tx, account).await?;
+    let seller_id = get_or_create_seller_id(&mut tx, order.seller.user_id, &order.seller.username).await?;
+    save_purchase(&mut tx, acc_id, seller_id, order.price).await?;
 
     tx.commit().await?;
     Ok(acc_id)

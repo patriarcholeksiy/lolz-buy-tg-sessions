@@ -1,5 +1,5 @@
-use crate::models::Order;
 use crate::buyer::model::Status;
+use crate::models::Order;
 use anyhow::bail;
 use reqwest::Client;
 use serde_json::json;

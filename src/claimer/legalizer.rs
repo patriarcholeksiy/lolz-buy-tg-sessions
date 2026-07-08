@@ -10,11 +10,11 @@ use tracing::{info, warn};
 use crate::claimer::tl_utils::{get_last_message, mute_chat, resolve_service_chat_peer};
 use crate::db::TelegramApp;
 
-pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &TelegramApp, phone: &String)
+pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &TelegramApp, phone: &str)
                                            -> anyhow::Result<(Client, SystemData)> {
-    let peer = resolve_service_chat_peer(&bought_client).await?;
+    let peer = resolve_service_chat_peer(bought_client).await?;
 
-    match mute_chat(&bought_client, peer.clone()).await {
+    match mute_chat(bought_client, peer.clone()).await {
         Ok(_) => info!("Telegram chat muted"),
         Err(err) => warn!("Error when mute telegram chat: {err:#?}")
     }
@@ -54,7 +54,7 @@ pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &Teleg
 
     let (fresh_client, _) = Client::connect(config).await?;
 
-    let last_msg = match get_last_message(&bought_client, peer.clone()).await {
+    let last_msg = match get_last_message(bought_client, peer.clone()).await {
         Ok(message) => message.message,
         Err(err) => {
             warn!("Err get last message: {err:#?}");
@@ -66,7 +66,7 @@ pub async fn spawn_legalized_client(bought_client: &Client, telegram_app: &Teleg
     let token = fresh_client.request_login_code(phone).await?;
     info!("Login code send");
 
-    let code = match poll_login_code(&bought_client, peer.clone(), last_code).await {
+    let code = match poll_login_code(bought_client, peer.clone(), last_code).await {
         Ok(c) => c,
         Err(err) => {
             fresh_client.disconnect();
@@ -137,7 +137,7 @@ async fn poll_login_code(client: &Client, peer: InputPeer, last_code: Option<Str
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
-            let new_msg = match get_last_message(&client, peer.clone()).await {
+            let new_msg = match get_last_message(client, peer.clone()).await {
                 Ok(message) => message.message,
                 Err(err) => {
                     warn!("Err get new message: {err:#?}");

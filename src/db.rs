@@ -1,7 +1,4 @@
-use std::collections::HashSet;
-use std::sync::Arc;
 use sqlx::{PgConnection, PgPool};
-use tokio::sync::Mutex;
 
 #[derive(Debug, sqlx::Type)]
 #[sqlx(type_name = "account_status", rename_all = "lowercase")]
@@ -23,18 +20,6 @@ pub struct Account {
     pub device_model: Option<String>,
     pub system_version: Option<String>,
     pub app_version: Option<String>,
-}
-
-pub async fn get_all_account_ids(pg_pool: &PgPool) -> anyhow::Result<Arc<Mutex<HashSet<i64>>>> {
-    let ids = sqlx::query_scalar!(
-        "SELECT tg_id FROM accounts"
-    ).fetch_all(pg_pool).await?;
-
-    let ids = ids.into_iter()
-        .flatten()
-        .collect::<HashSet<i64>>();
-
-    Ok(Arc::new(Mutex::new(ids)))
 }
 
 pub async fn save_account(executor: &mut PgConnection, account: Account) -> Result<i32, sqlx::Error>{

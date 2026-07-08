@@ -13,7 +13,6 @@ pub struct Items {
 #[derive(Deserialize)]
 pub struct Item {
     pub item_id: u64,
-    pub item_state: String,
     pub rub_price: i32,
 }
 
@@ -30,5 +29,5 @@ pub struct FromSection {
 #[derive(Deserialize, Debug)]
 pub struct BalanceDetails {
     #[serde(rename = "convertedBalance")]
-    pub converted_balance: f32,
+    pub converted_balance: i32,
 }

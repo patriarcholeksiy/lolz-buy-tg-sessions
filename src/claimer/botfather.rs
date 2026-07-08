@@ -29,7 +29,7 @@ pub async fn purge_mybots(client: &Client, peer: InputPeer) -> anyhow::Result<()
         warn!("Не удалось поместить чат в архив: {err:?}")
     };
 
-    let bots_name = fetch_bot_list(&client, peer.clone()).await?;
+    let bots_name = fetch_bot_list(client, peer.clone()).await?;
     info!("Боты к удалению: {bots_name:?}");
 
     for bot_name in bots_name {
@@ -44,13 +44,13 @@ pub async fn purge_mybots(client: &Client, peer: InputPeer) -> anyhow::Result<()
             continue;
         };
 
-        let Ok(message) = get_last_message(&client, peer.clone()).await else {
+        let Ok(message) = get_last_message(client, peer.clone()).await else {
             warn!("Не удалось получить ответ от BotFather для {}", bot_name);
             continue;
         };
 
         if message.message.contains("Send 'Yes, I am totally sure.'") {
-            if let Err(_) = client.send_message(peer.clone(), "Yes, I am totally sure.").await {
+            if client.send_message(peer.clone(), "Yes, I am totally sure.").await.is_err() {
                 let _ = client.send_message(peer.clone(), "/cancel").await;
             };
         } else {
@@ -82,7 +82,7 @@ async fn fetch_bot_list(client: &Client, peer: InputPeer) -> anyhow::Result<Vec<
     let mut name_bots = Vec::new();
 
     client.send_message(peer.clone(), "/mybots").await?;
-    let message = get_last_message(&client, peer.clone()).await?;
+    let message = get_last_message(client, peer.clone()).await?;
 
     if message.message.contains("no bots") {
         return Ok(name_bots)
